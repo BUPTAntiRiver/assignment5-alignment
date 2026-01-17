@@ -1,0 +1,62 @@
+import os
+from vllm import LLM, SamplingParams
+from typing import Callable
+import json
+from tqdm import tqdm
+
+
+def evaluate_vllm(
+    vllm_model: LLM,
+    reward_fn: Callable[[str, str], dict[str, float]],
+    prompts: list[str],
+    eval_sampling_params: SamplingParams,
+) -> None:
+    """
+    Evaluate a language model on a list of prompts,
+    compute evaluation metrics, and serialize results to disk.
+    """
+
+    # load gsm8k test examples
+    test_examples = []
+    gsm8k_test_path = "data/gsm8k/test.jsonl"
+    with open(gsm8k_test_path, "r") as f:
+        for line in tqdm(f, desc="Loading test examples"):
+            if line.strip():
+                test_examples.append(json.loads(line))
+
+    # format question prompts using the r1-zero prompt
+    formatted_prompts = []
+    for example in tqdm(test_examples, desc="Formatting prompts"):
+        question = example["question"]
+        formatted_prompt = prompts[0].replace("{question}", question)
+        formatted_prompts.append(formatted_prompt)
+
+    # generate model responses
+    responses = []
+    for response in tqdm(vllm_model.generate(
+        formatted_prompts,
+        sampling_params=eval_sampling_params,
+    ), desc="Generating responses"):
+        response_text = response.outputs[0].text
+        responses.append(response_text)
+
+    # calculate evaluation metrics
+    results = []
+    for i in tqdm(range(len(test_examples)), desc="Calculating evaluation metrics"):
+        ground_truth = test_examples[i]["answer"]
+        model_response = responses[i]
+        metrics = reward_fn(ground_truth, model_response)
+        results.append({
+            "question": test_examples[i]["question"],
+            "ground_truth": ground_truth,
+            "model_response": model_response,
+            "metrics": metrics,
+        })
+
+    # serialize results to disk
+    os.makedirs("results", exist_ok=True)
+    model_name = vllm_model.llm_engine.model_config.model
+    results_path = os.path.join("results", f"{model_name}_evaluation_results.jsonl")
+    with open(results_path, "w") as f:
+        for result in tqdm(results, desc="Saving results"):
+            f.write(json.dumps(result) + "\n")
