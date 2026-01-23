@@ -3,6 +3,8 @@ from vllm import LLM, SamplingParams
 from typing import Callable
 import json
 from tqdm import tqdm
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 
 def evaluate_vllm(
@@ -60,3 +62,51 @@ def evaluate_vllm(
     with open(results_path, "w") as f:
         for result in tqdm(results, desc="Saving results"):
             f.write(json.dumps(result) + "\n")
+
+
+def tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer):
+    assert len(prompt_strs) == len(output_strs)
+
+    prompt_enc = tokenizer(prompt_strs, add_special_tokens=True)
+    output_enc = tokenizer(output_strs, add_special_tokens=True)
+
+    # strip EOS from outputs (Qwen adds it anyway)
+    output_ids_list = []
+    for ids in output_enc["input_ids"]:
+        if ids and ids[-1] == tokenizer.eos_token_id:
+            ids = ids[:-1]
+        output_ids_list.append(ids)
+
+    input_ids_list = []
+    response_mask_list = []
+    
+
+    for p_ids, o_ids in zip(prompt_enc["input_ids"], output_ids_list):
+        full_ids = p_ids + o_ids
+
+        input_ids_list.append(torch.tensor(full_ids))
+
+        mask = [0] * (len(p_ids) - 1) + [1] * len(o_ids)
+        response_mask_list.append(torch.tensor(mask, dtype=torch.bool))
+
+    input_ids = torch.nn.utils.rnn.pad_sequence(
+        input_ids_list,
+        batch_first=True,
+        padding_value=tokenizer.pad_token_id,
+    )
+    labels = input_ids.clone()
+
+    input_ids = input_ids[:, :-1]
+    labels = labels[:, 1:]
+
+    response_mask = torch.nn.utils.rnn.pad_sequence(
+        response_mask_list,
+        batch_first=True,
+        padding_value=0,
+    )
+
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "response_mask": response_mask,
+    }
