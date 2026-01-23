@@ -123,3 +123,25 @@ def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
         dim=-1,
     )
     return entropy
+
+
+def get_response_log_probs(
+        model: torch.nn.Module,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor,
+        return_token_entropy: bool = False,
+) -> dict[str, torch.Tensor]:
+    logits = model(input_ids).logits
+    log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
+    log_probs = torch.gather(
+        log_softmax,
+        dim=-1,
+        index=labels.unsqueeze(-1),
+    ).squeeze(-1)
+    result = {
+        "log_probs": log_probs,
+    }
+    if return_token_entropy:
+        entropy = compute_entropy(logits)
+        result["token_entropy"] = entropy
+    return result
