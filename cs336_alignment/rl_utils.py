@@ -1,4 +1,5 @@
 import torch
+from einops import rearrange
 from typing import Callable
 
 def compute_group_normalized_rewards(
@@ -41,3 +42,22 @@ def compute_naive_policy_gradient_loss(
         policy_log_probs: torch.Tensor,
 ) -> torch.Tensor:
     return -raw_rewards_or_advantages * policy_log_probs
+
+
+def compute_grpo_clip_loss(
+        advantages: torch.Tensor,
+        policy_log_probs: torch.Tensor,
+        old_log_probs: torch.Tensor,
+        clip_range: float,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """
+    Return:
+        loss, metadata
+    """
+    weights = torch.exp(policy_log_probs - old_log_probs)
+    clipped_weights = torch.clamp(weights, 1.0 - clip_range, 1.0 + clip_range)
+    clipped_loss = clipped_weights * advantages
+    unclipped_loss = weights * advantages
+    loss = -torch.min(clipped_loss, unclipped_loss)
+    metadata = {}
+    return loss, metadata
