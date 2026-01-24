@@ -178,3 +178,6 @@ def sft_microbatch_train_step(
     }
     return loss, metadata
     
+
+def log_generations(prompts: list[str], responses: list[str]):
+    pass

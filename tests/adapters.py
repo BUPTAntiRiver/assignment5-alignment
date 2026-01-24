@@ -36,13 +36,13 @@ def run_tokenize_prompt_and_output(
 
 
 def run_compute_group_normalized_rewards(
-    reward_fn: Callable,
+    reward_fn: Callable[[str, str], dict[str, float]],
     rollout_responses: list[str],
     repeated_ground_truths: list[str],
     group_size: int,
     advantage_eps: float,
     normalize_by_std: bool,
-) -> tuple[torch.Tensor, dict[str, float]]:
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
     """
     Compute rewards for each group of rollout responses, 
     normalized by the group size.
@@ -78,7 +78,14 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
-    raise NotImplementedError
+    from cs336_alignment.rl_utils import compute_group_normalized_rewards
+    return compute_group_normalized_rewards(reward_fn,
+                                            rollout_responses,
+                                            repeated_ground_truths,
+                                            group_size,
+                                            advantage_eps,
+                                            normalize_by_std
+                                        )
 
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
