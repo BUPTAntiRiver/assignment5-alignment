@@ -1,6 +1,6 @@
 import torch
 from einops import rearrange
-from typing import Callable
+from typing import Callable, Literal
 
 def compute_group_normalized_rewards(
         reward_fn: Callable[[str, str], dict[str, float]],
@@ -61,3 +61,51 @@ def compute_grpo_clip_loss(
     loss = -torch.min(clipped_loss, unclipped_loss)
     metadata = {}
     return loss, metadata
+
+
+def compute_policy_gradient_loss(
+    policy_log_probs: torch.Tensor,
+    loss_type: Literal["no_baseline", "reinforce_with_baseline", "grpo_clip"],
+    raw_rewards: torch.Tensor | None = None,
+    advantages: torch.Tensor | None = None,
+    old_log_probs: torch.Tensor | None = None,
+    cliprange: float | None = None,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    if loss_type == "no_baseline":
+        assert raw_rewards is not None, "raw_rewards must be provided for no_baseline loss"
+        loss = compute_naive_policy_gradient_loss(
+            raw_rewards_or_advantages=raw_rewards,
+            policy_log_probs=policy_log_probs,
+        )
+        metadata = {}
+    elif loss_type == "reinforce_with_baseline":
+        assert advantages is not None, "advantages must be provided for reinforce_with_baseline loss"
+        loss = compute_naive_policy_gradient_loss(
+            raw_rewards_or_advantages=advantages,
+            policy_log_probs=policy_log_probs,
+        )
+        metadata = {}
+    elif loss_type == "grpo_clip":
+        assert advantages is not None, "advantages must be provided for grpo_clip loss"
+        assert old_log_probs is not None, "old_log_probs must be provided for grpo_clip loss"
+        assert cliprange is not None, "cliprange must be provided for grpo_clip loss"
+        loss, metadata = compute_grpo_clip_loss(
+            advantages=advantages,
+            policy_log_probs=policy_log_probs,
+            old_log_probs=old_log_probs,
+            clip_range=cliprange,
+        )
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}")
+    return loss, metadata
+
+
+def masked_mean(
+        tensor: torch.Tensor,
+        mask: torch.Tensor,
+        dim: int | None = None
+) -> torch.Tensor:
+    masked_tensor = tensor * mask
+    masked_sum = masked_tensor.sum(dim=dim, keepdim=False)
+    count = mask.sum(dim=dim, keepdim=False)
+    return masked_sum / count
